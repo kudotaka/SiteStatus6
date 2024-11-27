@@ -3,6 +3,8 @@
 using System.Collections.Immutable;
 using System.Text;
 using ClosedXML.Excel;
+using ClosedXML.Graphics;
+
 //using DocumentFormat.OpenXml.Drawing.Diagrams;
 //using DocumentFormat.OpenXml.Spreadsheet;
 using Microsoft.Extensions.DependencyInjection;
@@ -154,13 +156,27 @@ public class SiteStatusApp : ConsoleAppBase
                                 property.SetValue(ss, cellColumn.GetValue<DateTime>().ToString("yyyy/MM/dd"));
                                 break;
                             case XLDataType.Text:
-                                property.SetValue(ss, cellColumn.GetValue<string>());
+                                if (key.Equals("workStatus"))
+                                {
+                                    property.SetValue(ss, convertWorkStatus(cellColumn.GetValue<string>()));
+                                }
+                                else
+                                {
+                                    property.SetValue(ss, cellColumn.GetValue<string>());
+                                }
                                 break;
                             case XLDataType.Number:
                                 property.SetValue(ss, cellColumn.GetValue<int>().ToString());
                                 break;
                             case XLDataType.Blank:
-                                logger.ZLogTrace($"cell is Blank type at sheet:{sheet.Name} row:{r}");
+                                if (key.Equals("workStatus"))
+                                {
+                                    property.SetValue(ss, MyStatus.Work_InPrepare);
+                                }
+                                else
+                                {
+                                    logger.ZLogTrace($"cell is Blank type at sheet:{sheet.Name} row:{r}");
+                                }
                                 break;
                             default:
                                 logger.ZLogError($"cell is NOT type ( DateTime | Text ) at sheet:{sheet.Name} row:{r}");
@@ -304,32 +320,36 @@ public class SiteStatusApp : ConsoleAppBase
         const int SAVE_ROW_INPUTDATA = 1;
         const int SAVE_COLUMN_SITEKEY = 1;
         const int SAVE_COLUMN_SITENAME = 2;
-        const int SAVE_COLUMN_STATUS = 3;
+        const int SAVE_COLUMN_WORK_STATUS = 3;
+        const int SAVE_COLUMN_STATUS = 4;
         const int SAVE_FIRST_ROW = SAVE_ROW_INPUTDATA + 4;
         using var workbook = new XLWorkbook();
         var worksheet = workbook.AddWorksheet("status");
 
-        worksheet.Cell(SAVE_ROW_INPUTDATA, SAVE_COLUMN_INPUTDATA).SetValue(convertDateTimeToJst(DateTime.Now));
-        worksheet.Cell(SAVE_ROW_INPUTDATA + 1, SAVE_COLUMN_INPUTDATA).SetValue(definition);
-        worksheet.Cell(SAVE_ROW_INPUTDATA + 2, SAVE_COLUMN_INPUTDATA).SetValue(progress);
+        worksheet.Cell(SAVE_ROW_INPUTDATA, SAVE_COLUMN_INPUTDATA).SetValue(convertDateTimeToJst(DateTime.Now)).Style.Font.SetFontName("Meiryo UI");
+        worksheet.Cell(SAVE_ROW_INPUTDATA + 1, SAVE_COLUMN_INPUTDATA).SetValue(definition).Style.Font.SetFontName("Meiryo UI");
+        worksheet.Cell(SAVE_ROW_INPUTDATA + 2, SAVE_COLUMN_INPUTDATA).SetValue(progress).Style.Font.SetFontName("Meiryo UI");
 
-        worksheet.Cell(SAVE_FIRST_ROW, SAVE_COLUMN_SITEKEY).SetValue("拠点キー");
-        worksheet.Cell(SAVE_FIRST_ROW, SAVE_COLUMN_SITENAME).SetValue("拠点名");
-        worksheet.Cell(SAVE_FIRST_ROW, SAVE_COLUMN_STATUS).SetValue("ステータス");
+        worksheet.Cell(SAVE_FIRST_ROW, SAVE_COLUMN_SITEKEY).SetValue("拠点キー").Style.Font.SetFontName("Meiryo UI");
+        worksheet.Cell(SAVE_FIRST_ROW, SAVE_COLUMN_SITENAME).SetValue("拠点名").Style.Font.SetFontName("Meiryo UI");
+        worksheet.Cell(SAVE_FIRST_ROW, SAVE_COLUMN_WORK_STATUS).SetValue("工事ステータス").Style.Font.SetFontName("Meiryo UI");
+        worksheet.Cell(SAVE_FIRST_ROW, SAVE_COLUMN_STATUS).SetValue("ステータス").Style.Font.SetFontName("Meiryo UI");
 
         int row = SAVE_FIRST_ROW + 1;
         var keys = dic.Keys.ToImmutableList().Sort();
         foreach (var key in keys)
         {
             MySiteStatus ss = dic[key];
-            worksheet.Cell(row, SAVE_COLUMN_SITEKEY).SetValue(ss.siteKey);
-            worksheet.Cell(row, SAVE_COLUMN_SITENAME).SetValue(ss.siteName);
-            worksheet.Cell(row, SAVE_COLUMN_STATUS).SetValue(convertStatusToReadableStatus(ss.status));
+            worksheet.Cell(row, SAVE_COLUMN_SITEKEY).SetValue(ss.siteKey).Style.Font.SetFontName("Meiryo UI");
+            worksheet.Cell(row, SAVE_COLUMN_SITENAME).SetValue(ss.siteName).Style.Font.SetFontName("Meiryo UI");
+            worksheet.Cell(row, SAVE_COLUMN_WORK_STATUS).SetValue(convertStatusToReadableStatus(ss.workStatus)).Style.Font.SetFontName("Meiryo UI");
+            worksheet.Cell(row, SAVE_COLUMN_STATUS).SetValue(convertStatusToReadableStatus(ss.status)).Style.Font.SetFontName("Meiryo UI");
             row++;
         }
 
         worksheet.Column(SAVE_COLUMN_SITEKEY).AdjustToContents();
         worksheet.Column(SAVE_COLUMN_SITENAME).AdjustToContents();
+        worksheet.Column(SAVE_COLUMN_WORK_STATUS).AdjustToContents();
         worksheet.Column(SAVE_COLUMN_STATUS).AdjustToContents();
         workbook.SaveAs(save);
         if (!isError)
@@ -351,6 +371,24 @@ public class SiteStatusApp : ConsoleAppBase
             value.siteName = convertSiteNameToZeroSiteName(value.siteName);
         }
     }
+
+    private MyStatus convertWorkStatus(string status)
+    {
+        string wordStringToWorkStatus = config.Value.WordStringToWorkStatus;
+        Dictionary<string, int> dicStringToWorkStatus = new Dictionary<string, int>();
+        foreach (var keyAndValue in wordStringToWorkStatus.Split(','))
+        {
+            string[] item = keyAndValue.Split('/');
+            dicStringToWorkStatus.Add(item[0], int.Parse(item[1]));
+        }
+
+        if (dicStringToWorkStatus.ContainsKey(status))
+        {
+            return (MyStatus)dicStringToWorkStatus[status];
+        }
+        return MyStatus.Work_InPrepare;
+    }
+
     private MyStatus convertProgressStatus(string status)
     {
         string wordStringToStatus = config.Value.WordStringToStatus;
@@ -373,7 +411,7 @@ public class SiteStatusApp : ConsoleAppBase
         logger.ZLogTrace($"== start print ==");
         foreach (var site in dic.Values.ToList())
         {
-            logger.ZLogTrace($"キー:{site.siteKey},拠点名:{site.siteName},ステータス:{convertStatusToReadableStatus(site.status)}");
+            logger.ZLogTrace($"キー:{site.siteKey},拠点名:{site.siteName},工事ステータス:{convertStatusToReadableStatus(site.workStatus)},ステータス:{convertStatusToReadableStatus(site.status)}");
         }
         logger.ZLogTrace($"== end print ==");
     }
@@ -390,18 +428,24 @@ public class SiteStatusApp : ConsoleAppBase
         {
             case MyStatus.Init:
                 return "着手前";
-            case MyStatus.Survey_scheduling:
+            case MyStatus.Survey_Scheduling:
                 return "調査|日程調整中";
-            case MyStatus.Survey_scheduled:
+            case MyStatus.Survey_Scheduled:
                 return "調査|日程確定";
-            case MyStatus.Survey_completed:
+            case MyStatus.Survey_Completed:
                 return "調査|完了";
-            case MyStatus.Work_scheduling:
+            case MyStatus.Work_Scheduling:
                 return "工事|日程調整中";
-            case MyStatus.Work_scheduled:
+            case MyStatus.Work_Scheduled:
                 return "工事|日程確定";
-            case MyStatus.Work_completed:
-                return "工事|完了";
+            case MyStatus.Work_InPrepare:
+                return "工事|準備";
+            case MyStatus.Work_InProgress:
+                return "工事|工事中";
+            case MyStatus.Work_Tested:
+                return "工事|NW試験完了";
+            case MyStatus.Work_Completed:
+                return "工事|全完了";
             case MyStatus.Create_CompleteBook:
                 return "図書作成";
             case MyStatus.Finish:
@@ -498,6 +542,7 @@ public class MyConfig
     public int DefinitionDataRow {get; set;} = -1;
     public string DefinitionSheetName {get; set;} = "";
     public string DefinitionWordKeyToColum {get; set;} = "";
+    public string WordStringToWorkStatus {get; set;} = "";
     public int ProgressDataRow {get; set;} = -1;
     public string ProgressSheetName {get; set;} = "";
     public string ProgressWordKeyToColum {get; set;} = "";
@@ -509,12 +554,15 @@ public class MyConfig
 public enum MyStatus
 {
     Init = 0,
-    Survey_scheduling = 10,
-    Survey_scheduled = 11,
-    Survey_completed = 12,
-    Work_scheduling = 20,
-    Work_scheduled = 21,
-    Work_completed = 22,
+    Survey_Scheduling = 10,
+    Survey_Scheduled = 11,
+    Survey_Completed = 12,
+    Work_Scheduling = 20,
+    Work_Scheduled = 21,
+    Work_InPrepare = 24,
+    Work_InProgress = 25,
+    Work_Tested = 26,
+    Work_Completed = 29,
     Create_CompleteBook = 40,
     Finish = 50,
     VIP = 80,
@@ -527,5 +575,6 @@ public class MySiteStatus
     public string siteKey { set; get; } = "";
     public string siteNumber { set; get; } = "";
     public string siteName { set; get; } = "";
+    public MyStatus workStatus { set; get; } = MyStatus.UnKnown;
     public MyStatus status = MyStatus.UnKnown;
 }
