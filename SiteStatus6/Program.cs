@@ -1,12 +1,7 @@
-﻿//using System.Collections.Generic;
-//using System.Runtime.InteropServices;
-using System.Collections.Immutable;
+﻿using System.Collections.Immutable;
 using System.Text;
 using ClosedXML.Excel;
 using ClosedXML.Graphics;
-
-//using DocumentFormat.OpenXml.Drawing.Diagrams;
-//using DocumentFormat.OpenXml.Spreadsheet;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -171,7 +166,7 @@ public class SiteStatusApp : ConsoleAppBase
                             case XLDataType.Blank:
                                 if (key.Equals("workStatus"))
                                 {
-                                    property.SetValue(ss, MyStatus.Work_InPrepare);
+                                    property.SetValue(ss, MyStatus.Init);
                                 }
                                 else
                                 {
@@ -320,9 +315,10 @@ public class SiteStatusApp : ConsoleAppBase
         const int SAVE_ROW_INPUTDATA = 1;
         const int SAVE_COLUMN_SITEKEY = 1;
         const int SAVE_COLUMN_SITENAME = 2;
-        const int SAVE_COLUMN_WORK_STATUS = 3;
-        const int SAVE_COLUMN_STATUS = 4;
-        const int SAVE_FIRST_ROW = SAVE_ROW_INPUTDATA + 4;
+        const int SAVE_COLUMN_STATUS = 3;
+        const int SAVE_COLUMN_WORK_STATUS = 4;
+        const int SAVE_COLUMN_SCHEDULE_STATUS = 5;
+        const int SAVE_FIRST_ROW = SAVE_ROW_INPUTDATA + 5;
         using var workbook = new XLWorkbook();
         var worksheet = workbook.AddWorksheet("status");
 
@@ -332,8 +328,9 @@ public class SiteStatusApp : ConsoleAppBase
 
         worksheet.Cell(SAVE_FIRST_ROW, SAVE_COLUMN_SITEKEY).SetValue("拠点キー").Style.Font.SetFontName("Meiryo UI");
         worksheet.Cell(SAVE_FIRST_ROW, SAVE_COLUMN_SITENAME).SetValue("拠点名").Style.Font.SetFontName("Meiryo UI");
+        worksheet.Cell(SAVE_FIRST_ROW, SAVE_COLUMN_STATUS).SetValue("総合ステータス").Style.Font.SetFontName("Meiryo UI");
         worksheet.Cell(SAVE_FIRST_ROW, SAVE_COLUMN_WORK_STATUS).SetValue("工事ステータス").Style.Font.SetFontName("Meiryo UI");
-        worksheet.Cell(SAVE_FIRST_ROW, SAVE_COLUMN_STATUS).SetValue("ステータス").Style.Font.SetFontName("Meiryo UI");
+        worksheet.Cell(SAVE_FIRST_ROW, SAVE_COLUMN_SCHEDULE_STATUS).SetValue("調整ステータス").Style.Font.SetFontName("Meiryo UI");
 
         int row = SAVE_FIRST_ROW + 1;
         var keys = dic.Keys.ToImmutableList().Sort();
@@ -342,15 +339,17 @@ public class SiteStatusApp : ConsoleAppBase
             MySiteStatus ss = dic[key];
             worksheet.Cell(row, SAVE_COLUMN_SITEKEY).SetValue(ss.siteKey).Style.Font.SetFontName("Meiryo UI");
             worksheet.Cell(row, SAVE_COLUMN_SITENAME).SetValue(ss.siteName).Style.Font.SetFontName("Meiryo UI");
+            worksheet.Cell(row, SAVE_COLUMN_STATUS).SetValue(convertStatusToReadableStatus(maxStatus(ss.status, ss.workStatus))).Style.Font.SetFontName("Meiryo UI");
             worksheet.Cell(row, SAVE_COLUMN_WORK_STATUS).SetValue(convertStatusToReadableStatus(ss.workStatus)).Style.Font.SetFontName("Meiryo UI");
-            worksheet.Cell(row, SAVE_COLUMN_STATUS).SetValue(convertStatusToReadableStatus(ss.status)).Style.Font.SetFontName("Meiryo UI");
+            worksheet.Cell(row, SAVE_COLUMN_SCHEDULE_STATUS).SetValue(convertStatusToReadableStatus(ss.status)).Style.Font.SetFontName("Meiryo UI");
             row++;
         }
 
         worksheet.Column(SAVE_COLUMN_SITEKEY).AdjustToContents();
         worksheet.Column(SAVE_COLUMN_SITENAME).AdjustToContents();
-        worksheet.Column(SAVE_COLUMN_WORK_STATUS).AdjustToContents();
         worksheet.Column(SAVE_COLUMN_STATUS).AdjustToContents();
+        worksheet.Column(SAVE_COLUMN_WORK_STATUS).AdjustToContents();
+        worksheet.Column(SAVE_COLUMN_SCHEDULE_STATUS).AdjustToContents();
         workbook.SaveAs(save);
         if (!isError)
         {
@@ -386,7 +385,7 @@ public class SiteStatusApp : ConsoleAppBase
         {
             return (MyStatus)dicStringToWorkStatus[status];
         }
-        return MyStatus.Work_InPrepare;
+        return MyStatus.Init;
     }
 
     private MyStatus convertProgressStatus(string status)
@@ -403,7 +402,12 @@ public class SiteStatusApp : ConsoleAppBase
         {
             return (MyStatus)dicStringToStatus[status];
         }
-        return MyStatus.UnKnown;
+        return MyStatus.Init;
+    }
+
+    private MyStatus maxStatus(MyStatus status1, MyStatus status2)
+    {
+        return (MyStatus)Math.Max((int)status1, (int)status2);
     }
 
     private void printMySiteStatus(Dictionary<string, MySiteStatus> dic)
